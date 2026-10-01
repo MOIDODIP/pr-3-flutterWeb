@@ -7,6 +7,7 @@ import '../models/catalog_data.dart';
 import '../repositories/author_repository.dart';
 import '../repositories/book_repository.dart';
 import '../state/book_list_notifier.dart';
+import '../validation/validators.dart';
 
 class BookFormScreen extends StatefulWidget {
   final int? bookId;
@@ -73,13 +74,7 @@ class _BookFormScreenState extends State<BookFormScreen> {
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate() ||
-        _authorIds.isEmpty ||
-        _genreIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Выберите хотя бы одного автора и один жанр')));
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     final value = Book(
       id: widget.bookId ?? 0,
@@ -103,18 +98,6 @@ class _BookFormScreenState extends State<BookFormScreen> {
     await context.read<BookListNotifier>().refresh();
     if (!mounted) return;
     context.go('/books');
-  }
-
-  String? _required(String? value) =>
-      value == null || value.trim().isEmpty ? 'Поле обязательно' : null;
-
-  String? _number(String? value, {int min = 0, int max = 3000}) {
-    if (value == null || value.trim().isEmpty) return 'Поле обязательно';
-    final parsed = int.tryParse(value);
-    if (parsed == null || parsed < min || parsed > max) {
-      return 'Введите число от $min до $max';
-    }
-    return null;
   }
 
   @override
@@ -165,18 +148,14 @@ class _BookFormScreenState extends State<BookFormScreen> {
                       readOnly: widget.readOnly,
                       decoration: const InputDecoration(
                           labelText: 'Название', border: OutlineInputBorder()),
-                      validator: _required),
+                      validator: (value) => textLength(value, max: 200)),
                   const SizedBox(height: 12),
                   TextFormField(
                       controller: _isbnController,
                       readOnly: widget.readOnly,
                       decoration: const InputDecoration(
                           labelText: 'ISBN', border: OutlineInputBorder()),
-                      validator: (value) =>
-                          _required(value) ??
-                          (value!.length < 10
-                              ? 'ISBN слишком короткий'
-                              : null)),
+                      validator: isbnValidator),
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 12,
@@ -192,7 +171,7 @@ class _BookFormScreenState extends State<BookFormScreen> {
                                   labelText: 'Год',
                                   border: OutlineInputBorder()),
                               validator: (value) =>
-                                  _number(value, min: 1000, max: 2100))),
+                                  integerInRange(value, min: 1000, max: 2100))),
                       SizedBox(
                           width: 150,
                           child: TextFormField(
@@ -203,7 +182,7 @@ class _BookFormScreenState extends State<BookFormScreen> {
                                   labelText: 'Страниц',
                                   border: OutlineInputBorder()),
                               validator: (value) =>
-                                  _number(value, min: 1, max: 5000))),
+                                  integerInRange(value, min: 1, max: 5000))),
                       SizedBox(
                           width: 150,
                           child: TextFormField(
@@ -213,8 +192,7 @@ class _BookFormScreenState extends State<BookFormScreen> {
                               decoration: const InputDecoration(
                                   labelText: 'Всего копий',
                                   border: OutlineInputBorder()),
-                              validator: (value) =>
-                                  _number(value, min: 1, max: 1000))),
+                              validator: (value) => positiveQuantity(value))),
                       SizedBox(
                           width: 150,
                           child: TextFormField(
@@ -225,7 +203,7 @@ class _BookFormScreenState extends State<BookFormScreen> {
                                   labelText: 'Доступно',
                                   border: OutlineInputBorder()),
                               validator: (value) =>
-                                  _number(value, min: 0, max: 1000))),
+                                  positiveQuantity(value, allowZero: true))),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -241,7 +219,9 @@ class _BookFormScreenState extends State<BookFormScreen> {
                       onChanged: widget.readOnly
                           ? null
                           : (value) =>
-                              setState(() => _publisherId = value ?? 1)),
+                              setState(() => _publisherId = value ?? 1),
+                      validator: (value) => requiredSelection(value,
+                          message: 'Выберите издательство')),
                   const SizedBox(height: 16),
                   _selectionBlock(
                       'Авторы',
@@ -274,31 +254,44 @@ class _BookFormScreenState extends State<BookFormScreen> {
 
   Widget _selectionBlock(String title, List<(int, String)> values,
       Set<int> selected, ValueChanged<Set<int>> onChanged) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 12),
-        Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        Wrap(
-          children: values
-              .map((value) => SizedBox(
-                  width: 240,
-                  child: CheckboxListTile(
-                      value: selected.contains(value.$1),
-                      dense: true,
-                      title: Text(value.$2),
-                      onChanged: widget.readOnly
-                          ? null
-                          : (checked) {
-                              final next = {...selected};
-                              checked == true
-                                  ? next.add(value.$1)
-                                  : next.remove(value.$1);
-                              onChanged(next);
-                            })))
-              .toList(),
-        ),
-      ],
+    return FormField<Set<int>>(
+      initialValue: {...selected},
+      validator: (value) => nonEmptySelection(value),
+      builder: (field) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 12),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Wrap(
+            children: values
+                .map((value) => SizedBox(
+                    width: 240,
+                    child: CheckboxListTile(
+                        value: field.value?.contains(value.$1) ?? false,
+                        dense: true,
+                        title: Text(value.$2),
+                        onChanged: widget.readOnly
+                            ? null
+                            : (checked) {
+                                final next = {...?field.value};
+                                checked == true
+                                    ? next.add(value.$1)
+                                    : next.remove(value.$1);
+                                field.didChange(next);
+                                onChanged(next);
+                              })))
+                .toList(),
+          ),
+          if (field.errorText != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 12, top: 4),
+              child: Text(field.errorText!,
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 12)),
+            ),
+        ],
+      ),
     );
   }
 }

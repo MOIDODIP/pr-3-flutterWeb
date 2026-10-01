@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/author.dart';
 import '../models/author_query.dart';
 import '../models/catalog_data.dart';
@@ -5,8 +9,50 @@ import '../models/page_result.dart';
 import 'author_repository.dart';
 
 class InMemoryAuthorRepository implements AuthorRepository {
-  final List<Author> _authors = [...seedAuthors];
+  final SharedPreferences? _prefs;
+  late final List<Author> _authors;
   int _nextId = seedAuthors.length + 1;
+
+  InMemoryAuthorRepository([this._prefs]) {
+    _authors = [...seedAuthors];
+    _restore();
+  }
+
+  static const _storageKey = 'authors_v1';
+
+  void _restore() {
+    final raw = _prefs?.getString(_storageKey);
+    if (raw == null) {
+      _persist();
+      return;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) throw const FormatException('Ожидался список');
+      _authors
+        ..clear()
+        ..addAll(decoded.whereType<Map>().map(
+              (item) => Author.fromJson(Map<String, dynamic>.from(item)),
+            ));
+      if (_authors.isEmpty) _authors.addAll(seedAuthors);
+    } catch (_) {
+      _authors
+        ..clear()
+        ..addAll(seedAuthors);
+      _persist();
+    }
+    _nextId = _authors.fold<int>(
+        1, (max, author) => author.id >= max ? author.id + 1 : max);
+  }
+
+  Future<void> _persist() async {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    await prefs.setString(
+      _storageKey,
+      jsonEncode(_authors.map((author) => author.toJson()).toList()),
+    );
+  }
 
   @override
   Future<PageResult<Author>> find(AuthorQuery q) async {
@@ -49,6 +95,7 @@ class InMemoryAuthorRepository implements AuthorRepository {
       birthYear: author.birthYear,
     );
     _authors.add(created);
+    await _persist();
     return created;
   }
 
@@ -57,6 +104,7 @@ class InMemoryAuthorRepository implements AuthorRepository {
     final index = _authors.indexWhere((item) => item.id == author.id);
     if (index == -1) throw StateError('Автор ${author.id} не найден');
     _authors[index] = author;
+    await _persist();
     return author;
   }
 
@@ -65,17 +113,23 @@ class InMemoryAuthorRepository implements AuthorRepository {
     final index = _authors.indexWhere((item) => item.id == id);
     if (index == -1) throw StateError('Автор $id не найден');
     _authors[index] = _authors[index].copyWith(deletedAt: DateTime.now());
+    await _persist();
   }
 
   @override
-  Future<void> hardDelete(int id) async =>
-      _authors.removeWhere((item) => item.id == id);
+  Future<void> hardDelete(int id) async => _deleteAndPersist(id);
+
+  Future<void> _deleteAndPersist(int id) async {
+    _authors.removeWhere((item) => item.id == id);
+    await _persist();
+  }
 
   @override
   Future<void> restore(int id) async {
     final index = _authors.indexWhere((item) => item.id == id);
     if (index == -1) throw StateError('Автор $id не найден');
     _authors[index] = _authors[index].copyWith(clearDeletedAt: true);
+    await _persist();
   }
 
   @override
@@ -89,8 +143,13 @@ class InMemoryAuthorRepository implements AuthorRepository {
         count++;
       }
     }
+    await _persist();
     return count;
   }
+}
+
+class PersistentAuthorRepository extends InMemoryAuthorRepository {
+  PersistentAuthorRepository(super.prefs);
 }
 
 extension FirstOrNull<T> on Iterable<T> {

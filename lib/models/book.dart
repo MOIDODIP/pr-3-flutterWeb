@@ -27,6 +27,36 @@ class Book {
 
   bool get isDeleted => deletedAt != null;
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'isbn': isbn,
+        'year': year,
+        'pages': pages,
+        'publisherId': publisherId,
+        'authorIds': authorIds,
+        'genreIds': genreIds,
+        'copiesTotal': copiesTotal,
+        'copiesAvailable': copiesAvailable,
+        'deletedAt': deletedAt?.toIso8601String(),
+      };
+
+  factory Book.fromJson(Map<String, dynamic> json) {
+    return Book(
+      id: _asInt(json['id']),
+      title: _asString(json['title']),
+      isbn: _asString(json['isbn']),
+      year: _asInt(json['year']),
+      pages: _asInt(json['pages']),
+      publisherId: _asInt(json['publisherId']),
+      authorIds: _asIntList(json['authorIds']),
+      genreIds: _asIntList(json['genreIds']),
+      copiesTotal: _asInt(json['copiesTotal']),
+      copiesAvailable: _asInt(json['copiesAvailable']),
+      deletedAt: _asDateTime(json['deletedAt']),
+    );
+  }
+
   Book copyWith({
     String? title,
     String? isbn,
@@ -54,4 +84,22 @@ class Book {
       deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
     );
   }
+}
+
+String _asString(Object? value) => value is String ? value : '';
+
+int _asInt(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse('$value') ?? 0;
+}
+
+List<int> _asIntList(Object? value) {
+  if (value is! List) return const [];
+  return value.map(_asInt).toList();
+}
+
+DateTime? _asDateTime(Object? value) {
+  if (value is! String || value.isEmpty) return null;
+  return DateTime.tryParse(value);
 }

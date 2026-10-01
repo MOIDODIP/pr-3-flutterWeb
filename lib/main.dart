@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'repositories/author_repository.dart';
 import 'repositories/book_repository.dart';
@@ -10,13 +11,17 @@ import 'router.dart';
 import 'state/author_list_notifier.dart';
 import 'state/book_list_notifier.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   usePathUrlStrategy();
+  final prefs = await SharedPreferences.getInstance();
   runApp(
     MultiProvider(
       providers: [
-        Provider<BookRepository>(create: (_) => InMemoryBookRepository()),
-        Provider<AuthorRepository>(create: (_) => InMemoryAuthorRepository()),
+        Provider<BookRepository>(
+            create: (_) => PersistentBookRepository(prefs)),
+        Provider<AuthorRepository>(
+            create: (_) => PersistentAuthorRepository(prefs)),
         ChangeNotifierProvider(
           create: (context) =>
               BookListNotifier(context.read<BookRepository>())..load(),

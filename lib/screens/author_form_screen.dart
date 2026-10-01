@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/author.dart';
 import '../repositories/author_repository.dart';
 import '../state/author_list_notifier.dart';
+import '../validation/validators.dart';
 
 class AuthorFormScreen extends StatefulWidget {
   final int? authorId;
@@ -55,9 +56,6 @@ class _AuthorFormScreenState extends State<AuthorFormScreen> {
     _birthYearController.dispose();
     super.dispose();
   }
-
-  String? _required(String? value) =>
-      value == null || value.trim().isEmpty ? 'Поле обязательно' : null;
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -119,7 +117,7 @@ class _AuthorFormScreenState extends State<AuthorFormScreen> {
                           readOnly: widget.readOnly,
                           decoration: const InputDecoration(
                               labelText: 'Имя', border: OutlineInputBorder()),
-                          validator: _required),
+                          validator: (value) => textLength(value, max: 80)),
                       const SizedBox(height: 12),
                       TextFormField(
                           controller: _lastNameController,
@@ -127,7 +125,7 @@ class _AuthorFormScreenState extends State<AuthorFormScreen> {
                           decoration: const InputDecoration(
                               labelText: 'Фамилия',
                               border: OutlineInputBorder()),
-                          validator: _required),
+                          validator: (value) => textLength(value, max: 120)),
                       const SizedBox(height: 12),
                       TextFormField(
                           controller: _countryController,
@@ -135,7 +133,7 @@ class _AuthorFormScreenState extends State<AuthorFormScreen> {
                           decoration: const InputDecoration(
                               labelText: 'Страна',
                               border: OutlineInputBorder()),
-                          validator: _required),
+                          validator: (value) => textLength(value, max: 80)),
                       const SizedBox(height: 12),
                       TextFormField(
                           controller: _birthYearController,
@@ -144,12 +142,8 @@ class _AuthorFormScreenState extends State<AuthorFormScreen> {
                           decoration: const InputDecoration(
                               labelText: 'Год рождения',
                               border: OutlineInputBorder()),
-                          validator: (value) {
-                            final year = int.tryParse(value ?? '');
-                            return year == null || year < 1000 || year > 2020
-                                ? 'Введите год от 1000 до 2020'
-                                : null;
-                          }),
+                          validator: (value) =>
+                              integerInRange(value, min: 1000, max: 2020)),
                       if (!widget.readOnly) ...[
                         const SizedBox(height: 16),
                         SizedBox(

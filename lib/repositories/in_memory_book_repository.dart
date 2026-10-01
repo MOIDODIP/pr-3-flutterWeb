@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/catalog_data.dart';
 import '../models/book.dart';
 import '../models/book_query.dart';
@@ -5,8 +9,50 @@ import '../models/page_result.dart';
 import 'book_repository.dart';
 
 class InMemoryBookRepository implements BookRepository {
-  final List<Book> _books = [...seedBooks];
+  final SharedPreferences? _prefs;
+  late final List<Book> _books;
   int _nextId = seedBooks.length + 1;
+
+  InMemoryBookRepository([this._prefs]) {
+    _books = [...seedBooks];
+    _restore();
+  }
+
+  static const _storageKey = 'books_v1';
+
+  void _restore() {
+    final raw = _prefs?.getString(_storageKey);
+    if (raw == null) {
+      _persist();
+      return;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) throw const FormatException('Ожидался список');
+      _books
+        ..clear()
+        ..addAll(decoded.whereType<Map>().map(
+              (item) => Book.fromJson(Map<String, dynamic>.from(item)),
+            ));
+      if (_books.isEmpty) _books.addAll(seedBooks);
+    } catch (_) {
+      _books
+        ..clear()
+        ..addAll(seedBooks);
+      _persist();
+    }
+    _nextId =
+        _books.fold<int>(1, (max, book) => book.id >= max ? book.id + 1 : max);
+  }
+
+  Future<void> _persist() async {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    await prefs.setString(
+      _storageKey,
+      jsonEncode(_books.map((book) => book.toJson()).toList()),
+    );
+  }
 
   @override
   Future<PageResult<Book>> find(BookQuery q) async {
@@ -72,6 +118,7 @@ class InMemoryBookRepository implements BookRepository {
       copiesAvailable: created.copiesAvailable,
     );
     _books.add(value);
+    await _persist();
     return value;
   }
 
@@ -80,6 +127,7 @@ class InMemoryBookRepository implements BookRepository {
     final index = _books.indexWhere((item) => item.id == book.id);
     if (index == -1) throw StateError('Книга ${book.id} не найдена');
     _books[index] = book;
+    await _persist();
     return book;
   }
 
@@ -88,17 +136,23 @@ class InMemoryBookRepository implements BookRepository {
     final index = _books.indexWhere((item) => item.id == id);
     if (index == -1) throw StateError('Книга $id не найдена');
     _books[index] = _books[index].copyWith(deletedAt: DateTime.now());
+    await _persist();
   }
 
   @override
-  Future<void> hardDelete(int id) async =>
-      _books.removeWhere((item) => item.id == id);
+  Future<void> hardDelete(int id) async => _deleteAndPersist(id);
+
+  Future<void> _deleteAndPersist(int id) async {
+    _books.removeWhere((item) => item.id == id);
+    await _persist();
+  }
 
   @override
   Future<void> restore(int id) async {
     final index = _books.indexWhere((item) => item.id == id);
     if (index == -1) throw StateError('Книга $id не найдена');
     _books[index] = _books[index].copyWith(clearDeletedAt: true);
+    await _persist();
   }
 
   @override
@@ -112,8 +166,13 @@ class InMemoryBookRepository implements BookRepository {
         count++;
       }
     }
+    await _persist();
     return count;
   }
+}
+
+class PersistentBookRepository extends InMemoryBookRepository {
+  PersistentBookRepository(super.prefs);
 }
 
 extension FirstOrNull<T> on Iterable<T> {
